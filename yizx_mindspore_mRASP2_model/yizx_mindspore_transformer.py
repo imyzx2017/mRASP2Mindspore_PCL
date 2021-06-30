@@ -382,58 +382,8 @@ class TransformerModel(MindsporeEncoderDecoderModel):
         )
         return decoder_out
 
-
-
 if __name__ == '__main__':
-    args = Namespace(activation_dropout=0.0, activation_fn='gelu', adam_betas='(0.9, 0.98)', adam_eps=1e-08,
-                     adaptive_input=False, adaptive_softmax_cutoff=None, adaptive_softmax_dropout=0,
-                     all_gather_list_size=16384, arch='transformer_wmt_en_de_big', attention_dropout=0.1,
-                     batch_size=None, batch_size_valid=None, best_checkpoint_metric='loss', bf16=False, bpe=None,
-                     broadcast_buffers=False, bucket_cap_mb=25, checkpoint_shard_count=1, checkpoint_suffix='',
-                     clip_norm=0.0, cpu=False, criterion='label_smoothed_cross_entropy', cross_self_attention=False,
-                     curriculum=0, data='/userhome/jobs/NMTrans/mRASP-master/toy/data/pre-train', data_buffer_size=10,
-                     dataset_impl=None, ddp_backend='no_c10d', decoder_attention_heads=16, decoder_embed_dim=1024,
-                     decoder_embed_path=None, decoder_ffn_embed_dim=4096, decoder_input_dim=1024, decoder_layerdrop=0,
-                     decoder_layers=6, decoder_layers_to_keep=None, decoder_learned_pos=True,
-                     decoder_normalize_before=False, decoder_output_dim=1024, device_id=0, disable_validation=False,
-                     distributed_backend='nccl', distributed_init_method=None, distributed_no_spawn=True,
-                     distributed_port=-1, distributed_rank=0, distributed_world_size=1, distributed_wrapper='DDP',
-                     dropout=0.2, empty_cache_freq=0, encoder_attention_heads=16, encoder_embed_dim=1024,
-                     encoder_embed_path=None, encoder_ffn_embed_dim=4096, encoder_layerdrop=0, encoder_layers=6,
-                     encoder_layers_to_keep=None, encoder_learned_pos=True, encoder_normalize_before=False,
-                     eval_bleu=False, eval_bleu_args=None, eval_bleu_detok='space', eval_bleu_detok_args=None,
-                     eval_bleu_print_samples=False, eval_bleu_remove_bpe=None, eval_tokenized_bleu=False,
-                     fast_stat_sync=False, find_unused_parameters=False, finetune_from_model=None,
-                     fix_batches_to_gpus=False, fixed_validation_seed=None, fp16=True, fp16_init_scale=128,
-                     fp16_no_flatten_grads=False, fp16_scale_tolerance=0.0, fp16_scale_window=None, gen_subset='test',
-                     ignore_prefix_size=0, keep_best_checkpoints=-1, keep_interval_updates=-1, keep_last_epochs=-1,
-                     label_smoothing=0.1, layernorm_embedding=False, left_pad_source='True', left_pad_target='False',
-                     load_alignments=False, localsgd_frequency=3, log_format=None, log_interval=5, lr=[0.0005],
-                     lr_scheduler='inverse_sqrt', max_epoch=0, max_source_positions=256, max_target_positions=256,
-                     max_tokens=4096, max_tokens_valid=4096, max_update=100000, maximize_best_checkpoint_metric=False,
-                     memory_efficient_bf16=False, memory_efficient_fp16=False, min_loss_scale=0.0001, min_lr=1e-09,
-                     model_parallel_size=1, no_cross_attention=False, no_epoch_checkpoints=False,
-                     no_last_checkpoints=False, no_progress_bar=True, no_save=False, no_save_optimizer_state=False,
-                     no_scale_embedding=False, no_seed_provided=False, no_token_positional_embeddings=False,
-                     nprocs_per_node=1, num_batch_buckets=0, num_shards=1, num_workers=1, optimizer='adam',
-                     optimizer_overrides='{}', patience=-1, pipeline_balance=None, pipeline_checkpoint='never',
-                     pipeline_chunks=0, pipeline_decoder_balance=None, pipeline_decoder_devices=None,
-                     pipeline_devices=None, pipeline_encoder_balance=None, pipeline_encoder_devices=None,
-                     pipeline_model_parallel=False, profile=False, quant_noise_pq=0, quant_noise_pq_block_size=8,
-                     quant_noise_scalar=0, quantization_config_path=None, report_accuracy=False,
-                     required_batch_size_multiple=8, required_seq_len_multiple=1, reset_dataloader=True,
-                     reset_lr_scheduler=True, reset_meters=True, reset_optimizer=True,
-                     restore_file='checkpoint_last.pt',
-                     save_dir='/userhome/jobs/NMTrans/mRASP-master/pretrain/transformer_big', save_interval=1,
-                     save_interval_updates=50, scoring='bleu', seed=1, sentence_avg=False, shard_id=0,
-                     share_all_embeddings=True, share_decoder_input_output_embed=False,
-                     skip_invalid_size_inputs_valid_test=True, slowmo_algorithm='LocalSGD', slowmo_momentum=None,
-                     source_lang='src', stop_time_hours=0, target_lang='trg', task='translation',
-                     tensorboard_logdir=None, threshold_loss_scale=None, tie_adaptive_weights=False, tokenizer=None,
-                     tpu=False, train_subset='train', truncate_source=False, update_freq=[1], upsample_primary=1,
-                     use_bmuf=False, use_old_adam=False, user_dir=None, valid_subset='valid', validate_after_updates=0,
-                     validate_interval=1, validate_interval_updates=0, warmup_init_lr=1e-07, warmup_updates=4000,
-                     weight_decay=0.0, zero_sharding='none')
+    args = get_args()
 
     src_path = os.path.join(args.data, "dict.{}.txt".format(args.source_lang))
     trg_path = os.path.join(args.data, "dict.{}.txt".format(args.target_lang))
@@ -458,3 +408,32 @@ if __name__ == '__main__':
 
     res, extra = myTransformerModel(src_tokens, src_lens, prev_output_tokens)#, True, False, None, None)
     # print(res.shape, extra['attn'][0].shape)  # [24, 131, 64871], [24, 131, 61]
+
+
+    ######################################################################
+    # Do training
+    from mindspore.train.model import Model
+    from mindspore import context
+    import os
+
+    device_id = 6 #int(os.getenv("DEVICE_ID"))
+    rank_id = 6 #int(os.getenv("RANK_ID"))
+    device_num = 1
+    local_rank = rank_id
+    print('local_rank:{}, device id:{} start to run...'.format(
+        local_rank, device_id),
+        flush=True)
+    save_graphs_path = "/var/log/npu/slog/device-" + str(local_rank) + "/"
+    context.set_context(save_graphs=False,
+                        save_graphs_path=save_graphs_path,
+                        mode=context.GRAPH_MODE,
+                        device_target="GPU",
+                        device_id=device_id)
+    # context.set_context(variable_memory_max_size="31GB") Not supported on GPU
+
+    model = Model(myTransformerModel)
+    print(model)
+    #######################################################################
+
+
+

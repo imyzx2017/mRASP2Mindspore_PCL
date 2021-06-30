@@ -166,6 +166,14 @@ class Dictionary(object):
         """Helper to get index of pad symbol"""
         return self.pad_index
 
+    def eos(self):
+        """Helper to get index of end-of-sentence symbol"""
+        return self.eos_index
+
+    def unk(self):
+        """Helper to get index of unk symbol"""
+        return self.unk_index
+
     @classmethod
     def load(cls, f):
         """Loads the dictionary from a text file with the format:
