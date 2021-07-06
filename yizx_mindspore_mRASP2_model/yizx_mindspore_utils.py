@@ -114,6 +114,22 @@ def Linear(in_features, out_features, bias=True):
 def masked_fill(weights, mask, unsqueeze_ops, value='-inf'):
     mask = mask * 1
     unsqueeze_key_padding_mask = unsqueeze_ops(unsqueeze_ops(mask, 1), 2)
+    # print(weights.shape, unsqueeze_key_padding_mask.shape)
+    Inversed_unsqueeze_key_padding_mask = 1 - unsqueeze_key_padding_mask
+
+    # make inf matrix shape like attn_output_weights
+    tmp_infMatrix = Tensor(np.ones(weights.shape), weights.dtype)
+    # using -1e10 to replace -inf, because 0 * -inf = nan
+    tmp_infMatrix_inf = fill_with_neg_inf(tmp_infMatrix, value)
+    tmp_infMatrix_inf = tmp_infMatrix_inf * unsqueeze_key_padding_mask
+    need2convertinf_attn_output_weights = weights * tmp_infMatrix_inf
+    keep_attn_output_weights = weights * Inversed_unsqueeze_key_padding_mask
+    attn_output_weights = need2convertinf_attn_output_weights + keep_attn_output_weights
+    return attn_output_weights
+
+def masked_fill_withzero(weights, mask, unsqueeze_ops, value='-inf'):
+    mask = mask * 1
+    unsqueeze_key_padding_mask = mask
     Inversed_unsqueeze_key_padding_mask = 1 - unsqueeze_key_padding_mask
 
     # make inf matrix shape like attn_output_weights
@@ -723,7 +739,7 @@ class MultiheadAttention(nn.Cell):
                 return attn_weights, v
 
             attn_weights_float = softmax(attn_weights, dim=-1)
-            attn_weights.set_dtype(attn_weights_float.dtype)
+            # attn_weights.set_dtype(attn_weights_float.dtype)
             if not self.dropout_module is None:
                 attn_probs = self.dropout_module(attn_weights)
             else:

@@ -117,9 +117,9 @@ class MindsporeDecoder(nn.Cell):
 
         logits = net_output[0]
         if log_probs:
-            return log_softmax(logits, dim=-1, onnx_trace=self.onnx_trace)
+            return log_softmax(logits, dim=-1)
         else:
-            return softmax(logits, dim=-1, onnx_trace=self.onnx_trace)
+            return softmax(logits, dim=-1)
 
     def max_positions(self):
         """Maximum input length supported by the decoder."""
@@ -775,7 +775,6 @@ class TransformerMsDecoder(MindsporeIncrementDecoder):
             inner_states.append(x)
             if layer_attn is not None and idx == alignment_layer:
                 attn = layer_attn
-                attn.set_dtype(mstype.float32) #.to(x)
 
         if attn is not None:
             if alignment_heads is not None:

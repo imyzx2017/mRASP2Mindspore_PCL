@@ -9,6 +9,8 @@ from argparse import Namespace
 
 from yizx_fairseq_dictionary import Dictionary
 
+from yizx_mindspore_criterions import LabelSmoothedCrossEntropyCriterion
+
 
 DEFAULT_MAX_SOURCE_POSITIONS = 1024
 DEFAULT_MAX_TARGET_POSITIONS = 1024
@@ -382,6 +384,8 @@ class TransformerModel(MindsporeEncoderDecoderModel):
         )
         return decoder_out
 
+
+
 if __name__ == '__main__':
     args = get_args()
 
@@ -431,9 +435,19 @@ if __name__ == '__main__':
                         device_id=device_id)
     # context.set_context(variable_memory_max_size="31GB") Not supported on GPU
 
-    model = Model(myTransformerModel)
-    print(model)
+    # model = Model(myTransformerModel)
+
+    ##################################
+    # sentence_avg = False
+    # label_smoothing = 0.1
+    # ignore_prefix_size = 0
+    # report_accuracy = False
+    # myloss = LabelSmoothedCrossEntropyCriterion(sentence_avg, label_smoothing)
+    # model_with_loss = mRASP2ModelWithLoss(myTransformerModel, myloss)
+    # print(model_with_loss)
     #######################################################################
+
+
 
 
 

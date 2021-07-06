@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="WebServers">
+    <option name="servers">
+      <webServer id="fe99d487-20e9-4220-a5d3-8d8425178233" name="AGX2234_mindspore">
+        <fileTransfer rootFolder="/home/yizx/mRASP" accessType="SFTP" host="192.168.202.123" port="2234" sshConfigId="7e10a64c-2568-4ce5-a77b-ee3221c2f907" sshConfig="yizxms@192.168.202.123:2234 password">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" passiveMode="true" shareSSLContext="true" />
+          </advancedOptions>
+        </fileTransfer>
+      </webServer>
+    </option>
+  </component>
+</project>

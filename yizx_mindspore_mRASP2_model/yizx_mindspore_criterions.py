@@ -1,26 +1,29 @@
 import mindspore
 import mindspore.nn as nn
-from yizx_mindspore_utils import ExpandDims, ReduceSum, Equal, masked_fill, item
+from yizx_mindspore_utils import ExpandDims, ReduceSum, Equal, masked_fill_withzero, item, masked_fill
 import mindspore.ops as ops
 import mindspore.common.dtype as mstype
 from mindspore import Tensor
 import numpy as np
 
+
 def label_smoothed_nll_loss(lprobs, target, epsilon, ignore_index=None, reduce=True):
-    # lprobs.shape [3144, 64871]; target.shape [3144]; epsilon=0.1
+    # lprobs.shape [3144, 64871]; target.shape [3144]; epsilon=0.1; ignore_index=1
+    # print(lprobs.dtype, target.dtype)
     ops_unsqueeze = ExpandDims()
     if target.dim() == lprobs.dim() - 1:
         target = ops_unsqueeze(target, -1)
-    ops_gather = ops.GatherD()
-    nll_loss = ops_gather(-lprobs, -1, target)          # -lprobs.gather(dim=-1, index=target)
+    # ops_gather = ops.GatherD()
+    nll_loss = ops.GatherD()(-lprobs, -1, target)          # -lprobs.gather(dim=-1, index=target)
     ops_sum_keep = ReduceSum(keep_dims=True)
     ops_sum = ReduceSum(keep_dims=False)
     smooth_loss = ops_sum_keep(-lprobs, axis=-1)             # -lprobs.sum(dim=-1, keepdim=True)
     if ignore_index is not None:
         ops_equal = Equal()
         pad_mask = ops_equal(target, ignore_index)      # target.eq(ignore_index)
-        nll_loss = masked_fill(nll_loss, pad_mask, ops_unsqueeze, 0)
-        smooth_loss = masked_fill(smooth_loss, pad_mask, ops_unsqueeze, 0)
+        nll_loss = masked_fill_withzero(nll_loss, pad_mask, ops_unsqueeze, 0)
+        smooth_loss = masked_fill_withzero(smooth_loss, pad_mask, ops_unsqueeze, 0)
+
         # nll_loss.masked_fill_(pad_mask, 0.0)
         # smooth_loss.masked_fill_(pad_mask, 0.0)
     else:
@@ -112,24 +115,93 @@ class LabelSmoothedCrossEntropyCriterion(nn.Cell):
         return loss, nll_loss
 
 
+class mRASP2ModelWithLoss(nn.Cell):
+    def __init__(self,
+                 model,
+                 sentence_avg,
+                 label_smoothing,
+                 padding_idx,
+                 ignore_prefix_size=0,
+                 report_accuracy=False,
+                 ):
+        super(mRASP2ModelWithLoss, self).__init__()
+        self.model = model
+        self.sentence_avg = sentence_avg
+        self.eps = label_smoothing
+        self.ignore_prefix_size = ignore_prefix_size
+        self.report_accuracy = report_accuracy
+        self.padding_idx = padding_idx
+    def construct(self,
+        sample,
+        reduce=True,
+    ):
+        src_tokens = sample['src_tokens']
+        src_lengths = sample['src_lengths']
+        prev_output_tokens = sample['prev_output_tokens']
+
+        # target = sample['target']
+        # logits, extra = self.model(src_tokens, src_lens, prev_output_tokens)
+
+        net_output = self.model(src_tokens, src_lengths, prev_output_tokens)
+        loss, nll_loss = self.compute_loss(self.model, net_output, sample, reduce=reduce)
+        sample_size = (
+            sample["target"].shape[0] if self.sentence_avg else sample["ntokens"]
+        )
+        return loss, sample_size
+
+    def compute_loss(self, model, net_output, sample, reduce=True):
+        lprobs, target = self.get_lprobs_and_target(model, net_output, sample)
+        loss, nll_loss = label_smoothed_nll_loss(
+            lprobs,
+            target,
+            self.eps,
+            ignore_index=self.padding_idx,
+            reduce=reduce,
+        )
+        return loss, nll_loss
+
+    def get_lprobs_and_target(self, model, net_output, sample):
+        # print(net_output[0].mean())
+        lprobs = model.get_normalized_probs(net_output, log_probs=True)
+        # print(lprobs.mean())
+        # ops_sum = ops.ReduceSum()
+        # print(ops_sum(lprobs))
+        target = sample['target']
+        return lprobs.view(-1, lprobs.shape[-1]), target.view(-1)
+
+
 
 if __name__ == '__main__':
     sentence_avg = False
     label_smoothing = 0.1
     ignore_prefix_size = 0
     report_accuracy = False
-    myloss = LabelSmoothedCrossEntropyCriterion(sentence_avg, label_smoothing)
+    # myloss = LabelSmoothedCrossEntropyCriterion(sentence_avg, label_smoothing)
 
 
     # ########################################################################
     # # Test label_smoothed_nll_loss with fairseq_source_code
-    # lprobs = Tensor(np.random.randn(3144, 64871), mstype.float32)
-    # target = Tensor(np.random.randn(3144), mstype.int64)
-    # epsilon = 0.1
-    # loss, nll_loss = label_smoothed_nll_loss(lprobs, target, epsilon, ignore_index=1, reduce=True)
-    # print(loss.dtype, nll_loss)  # float32
+    import random
+    SEED = 0
+    np.random.seed(SEED)
+    random.seed(SEED)
+
+    lprobs = Tensor(np.random.randint(0, 3, (3144, 64871)), mstype.float32)
+    target = Tensor(np.random.randint(0, 3, (3144)), mstype.int64)
+    print(target)
+    epsilon = 0.1
+    loss, nll_loss = label_smoothed_nll_loss(lprobs, target, epsilon, ignore_index=1, reduce=True)
+    # print(loss, nll_loss)  # float32
     # ##########################################################################
 
-
+    ##################################
+    # sentence_avg = False
+    # label_smoothing = 0.1
+    # ignore_prefix_size = 0
+    # report_accuracy = False
+    # myloss = LabelSmoothedCrossEntropyCriterion(sentence_avg, label_smoothing)
+    # model_with_loss = mRASP2ModelWithLoss(myTransformerModel, myloss)
+    # print(model_with_loss)
+    ######################################
 
 
