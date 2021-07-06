@@ -25,7 +25,7 @@ import random
 import uuid
 
 from mindspore.ops import Fill, Zeros, NotEqual, CumSum, \
-    Concat, matmul, Pad, ExpandDims, Add, Softmax, Dropout, \
+    Concat, matmul, Pad, ExpandDims, Softmax, Dropout, \
     ReduceSum, ReLU, repeat_elements, Softmax, LogSoftmax, ReduceMean, Equal, ReduceAny
 
 EncoderOut = NamedTuple(
@@ -780,7 +780,7 @@ def get_args():
                      batch_size=None, batch_size_valid=None, best_checkpoint_metric='loss', bf16=False, bpe=None,
                      broadcast_buffers=False, bucket_cap_mb=25, checkpoint_shard_count=1, checkpoint_suffix='',
                      clip_norm=0.0, cpu=False, criterion='label_smoothed_cross_entropy', cross_self_attention=False,
-                     curriculum=0, data='/userhome/jobs/NMTrans/mRASP-master/toy/data/pre-train', data_buffer_size=10,
+                     curriculum=0, data='./pre-train', data_buffer_size=10,
                      dataset_impl=None, ddp_backend='no_c10d', decoder_attention_heads=16, decoder_embed_dim=1024,
                      decoder_embed_path=None, decoder_ffn_embed_dim=4096, decoder_input_dim=1024, decoder_layerdrop=0,
                      decoder_layers=6, decoder_layers_to_keep=None, decoder_learned_pos=True,

@@ -28,6 +28,7 @@ if __name__ == '__main__':
     # load mRASP2 dataset
     src_datasets = []
     tgt_datasets = []
+
     # paths_list = [args.data + '/valid.src-trg.src', args.data + '/valid.src-trg.trg']
     paths_list = [args.data + '/train.src-trg.src', args.data + '/train.src-trg.trg']
 
@@ -203,6 +204,7 @@ if __name__ == '__main__':
     print('local_rank:{}, device id:{} start to run...'.format(
         local_rank, device_id),
         flush=True)
+    # print(args.data)
     save_graphs_path = "/var/log/npu/slog/device-" + str(local_rank) + "/"
     context.set_context(save_graphs=False,
                         save_graphs_path=save_graphs_path,
