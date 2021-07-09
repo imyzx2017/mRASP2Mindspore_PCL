@@ -14,8 +14,19 @@ from yizx_mindspore_transformer import TransformerMsEncoder, TransformerMsDecode
 from yizx_mindspore_criterions import LabelSmoothedCrossEntropyCriterion, \
     label_smoothed_nll_loss, mRASP2ModelWithLoss
 
+import moxing
+
 if __name__ == '__main__':
     args = get_args()
+    # download src / trg data from obs
+    raw_data_dir = 's3://pcl-verify/yizx/gpt2.6b/mRASP/pretrain'
+    args.data = '/tmp/pretrain/'
+    if moxing.file.is_directory(raw_data_dir):
+        ret = moxing.file.list_directory(raw_data_dir)
+    for file_item in ret:
+        file_path = raw_data_dir + '/' + file_item
+        moxing.file.copy(file_path, args.data + file_item)
+    
     src_path = os.path.join(args.data, "dict.{}.txt".format(args.source_lang))
     trg_path = os.path.join(args.data, "dict.{}.txt".format(args.target_lang))
     trg_dictionary = Dictionary.load(trg_path)
@@ -28,7 +39,6 @@ if __name__ == '__main__':
     # load mRASP2 dataset
     src_datasets = []
     tgt_datasets = []
-
     # paths_list = [args.data + '/valid.src-trg.src', args.data + '/valid.src-trg.trg']
     paths_list = [args.data + '/train.src-trg.src', args.data + '/train.src-trg.trg']
 
@@ -179,7 +189,7 @@ if __name__ == '__main__':
     from mindspore.context import ParallelMode
     import os
 
-    args.device_target = 'GPU'
+    args.device_target = 'Ascend'
     ###########################################
     # # Initialize
     # if args.device_target == "Ascend":
@@ -197,14 +207,12 @@ if __name__ == '__main__':
     ##########################################
 
 
-    device_id = 6  # int(os.getenv("DEVICE_ID"))
-    rank_id = 6  # int(os.getenv("RANK_ID"))
-    #device_num = 1
+    device_id = 0  # int(os.getenv("DEVICE_ID"))
+    rank_id = 0  # int(os.getenv("RANK_ID"))
     local_rank = rank_id
     print('local_rank:{}, device id:{} start to run...'.format(
         local_rank, device_id),
         flush=True)
-    # print(args.data)
     save_graphs_path = "/var/log/npu/slog/device-" + str(local_rank) + "/"
     context.set_context(save_graphs=False,
                         save_graphs_path=save_graphs_path,
@@ -214,10 +222,11 @@ if __name__ == '__main__':
     # model = Model(myTransformerModelWithLoss)
 
     for data in mRASPDataset.create_dict_iterator():
+        # print(data)
         loss, sample_size = myTransformerModelWithLoss(data)
         print(loss, sample_size)
         # raise ImportError
-        #break
+        break
 
 
 

@@ -132,25 +132,31 @@ class mRASP2ModelWithLoss(nn.Cell):
         self.report_accuracy = report_accuracy
         self.padding_idx = padding_idx
     def construct(self,
-        sample,
-        reduce=True,
-    ):
-        src_tokens = sample['src_tokens']
-        src_lengths = sample['src_lengths']
-        prev_output_tokens = sample['prev_output_tokens']
-
+                    id,
+                    nsentences,
+                    ntokens,
+                    src_tokens,
+                    src_lengths,
+                    prev_output_tokens,
+                    target,
+                    reduce=True,
+                ):
+        # src_tokens = sample['src_tokens']
+        # src_lengths = sample['src_lengths']
+        # prev_output_tokens = sample['prev_output_tokens']
         # target = sample['target']
-        # logits, extra = self.model(src_tokens, src_lens, prev_output_tokens)
+        # ntokens = sample["ntokens"]
+        # target = sample['target']
 
         net_output = self.model(src_tokens, src_lengths, prev_output_tokens)
-        loss, nll_loss = self.compute_loss(self.model, net_output, sample, reduce=reduce)
+        loss, nll_loss = self.compute_loss(self.model, net_output, target, reduce=reduce)
         sample_size = (
-            sample["target"].shape[0] if self.sentence_avg else sample["ntokens"]
+            target.shape[0] if self.sentence_avg else ntokens
         )
         return loss, sample_size
 
-    def compute_loss(self, model, net_output, sample, reduce=True):
-        lprobs, target = self.get_lprobs_and_target(model, net_output, sample)
+    def compute_loss(self, model, net_output, target, reduce=True):
+        lprobs, target = self.get_lprobs_and_target(model, net_output, target)
         loss, nll_loss = label_smoothed_nll_loss(
             lprobs,
             target,
@@ -160,13 +166,13 @@ class mRASP2ModelWithLoss(nn.Cell):
         )
         return loss, nll_loss
 
-    def get_lprobs_and_target(self, model, net_output, sample):
+    def get_lprobs_and_target(self, model, net_output, target):
         # print(net_output[0].mean())
         lprobs = model.get_normalized_probs(net_output, log_probs=True)
         # print(lprobs.mean())
         # ops_sum = ops.ReduceSum()
         # print(ops_sum(lprobs))
-        target = sample['target']
+        # target = sample['target']
         return lprobs.view(-1, lprobs.shape[-1]), target.view(-1)
 
 

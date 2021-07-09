@@ -195,7 +195,7 @@ def batch_by_size(
 
     max_tokens = max_tokens if max_tokens is not None else -1
     max_sentences = max_sentences if max_sentences is not None else -1
-    bsz_mult = required_batch_size_multiple
+    bsz_mult = required_batch_size_multiple  # 8
 
     if not isinstance(indices, np.ndarray):
         indices = np.fromiter(indices, dtype=np.int64, count=-1)
@@ -221,6 +221,7 @@ def collate_tokens(
     pad_to_multiple=1,
 ):
     """Convert a list of 1d tensors into a padded 2d tensor."""
+    # print(len(values[0]))
     size = max(v.shape[0] for v in values)
     size = size if pad_to_length is None else max(size, pad_to_length)
     if pad_to_multiple != 1 and size % pad_to_multiple != 0:
@@ -242,10 +243,27 @@ def collate_tokens(
 
     for i, v in enumerate(values):
         if left_pad:
-            res[i][size - len(v):] = v
+            if move_eos_to_beginning:
+                if eos_idx is None:
+                    # if no eos_idx is specified, then use the last token in src
+                    res[i][size - len(v) :][0] = v[-1]
+                else:
+                    res[i][size - len(v) :][0] = eos_idx
+                res[i][size - len(v) :][1:] = v[:-1]
+            else:
+                res[i][size - len(v):] = v
         else:
-            res[i][: len(v)] = v
+            if move_eos_to_beginning:
+                if eos_idx is None:
+                    # if no eos_idx is specified, then use the last token in src
+                    res[i][: len(v)][0] = v[-1]
+                else:
+                    res[i][: len(v)][0] = eos_idx
+                res[i][: len(v)][1:] = v[:-1]
+            else:
+                res[i][: len(v)] = v
         # copy_tensor(v, res[i][size - len(v):] if left_pad else res[i][: len(v)])
+    # print(res, res.shape)  # 72, 54
     return res
 
 def index_select_numpy(in_data, axis, sorted_indices):
@@ -279,14 +297,12 @@ def collate(
             pad_to_length=pad_to_length,
             pad_to_multiple=pad_to_multiple,
         )
-
     # id = torch.LongTensor([s["id"] for s in samples])
     src_tokens = merge(
         "source",
         left_pad=left_pad_source,
         pad_to_length=pad_to_length["source"] if pad_to_length is not None else None,
     )
-
     # # sort by descending source length
     src_lengths = [(s["source"] != pad_idx).sum() for s in samples]
     src_lengths = np.sort(src_lengths)[::-1]
@@ -673,6 +689,7 @@ class LanguagePairDataset(FairseqMsDataset):
             self.tgt_sizes[index] if self.tgt_sizes is not None else 0,
         )
 
+
     def batch_by_size(
         self,
         indices,
@@ -700,6 +717,8 @@ class LanguagePairDataset(FairseqMsDataset):
         if self.buckets is None:
             # sort by target length, then source length
             if self.tgt_sizes is not None:
+                # tgt_min_len = np.argsort(self.tgt_sizes[indices])[0]
+                # print(self.tgt_sizes[indices[tgt_min_len]])
                 indices = indices[np.argsort(self.tgt_sizes[indices], kind="mergesort")]
             return indices[np.argsort(self.src_sizes[indices], kind="mergesort")]
         else:
@@ -797,7 +816,6 @@ class EpochBatchIterator(object):
             with numpy_seed(seed):
                 np.random.shuffle(batches)
             return batches
-
         if shuffle:
             batches = shuffle_batches(list(self.frozen_batches), self.seed + epoch)
             # print(self.seed + epoch, self.frozen_batches[1])
@@ -869,7 +887,7 @@ if __name__ == '__main__':
     trg_path = os.path.join(args.data, "dict.{}.txt".format(args.target_lang))
     trg_dictionary = Dictionary.load(trg_path)
     src_dictionary = Dictionary.load(src_path)
-    load_dataset(args, src_dictionary, trg_dictionary, 'valid', combine=False)
+    # load_dataset(args, src_dictionary, trg_dictionary, 'valid', combine=False)
 
 
 
@@ -916,6 +934,8 @@ if __name__ == '__main__':
     num_buckets = 0
     shuffle = True
     pad_to_multiple = 1
+
+    # print(len(src_dataset[0]), len(tgt_dataset[0])) 52, 41
 
 
     myPairDataset = LanguagePairDataset(
@@ -965,6 +985,7 @@ if __name__ == '__main__':
     with numpy_seed(seed):
         indices = myPairDataset.ordered_indices()
     # print(len(indices))  # same seed=1, len=37764
+    # print(src_dataset[indices[0]], tgt_dataset[indices[0]])  #MinLen: 2
 
     batch_sampler = myPairDataset.batch_by_size(
         indices,
@@ -973,7 +994,7 @@ if __name__ == '__main__':
         required_batch_size_multiple=required_batch_size_multiple,
     )
     #############################################
-    # print(batch_sampler[0])
+    # print(len(batch_sampler[0]), len(batch_sampler[1]), len(batch_sampler[2]))  # 72, 240, 144
     # for index in batch_sampler[0]:
     #     print(myPairDataset[index])
     #####################################################
@@ -996,7 +1017,7 @@ if __name__ == '__main__':
                       'prev_output_tokens', 'target'],
         shuffle=True
     )
-    ######################################################
+    # ######################################################
     for data in mRASPDataset.create_dict_iterator():
         print(data)
         break

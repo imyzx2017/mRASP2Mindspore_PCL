@@ -25,8 +25,12 @@ import random
 import uuid
 
 from mindspore.ops import Fill, Zeros, NotEqual, CumSum, \
-    Concat, matmul, Pad, ExpandDims, Softmax, Dropout, \
-    ReduceSum, ReLU, repeat_elements, Softmax, LogSoftmax, ReduceMean, Equal, ReduceAny
+    Concat, MatMul, Pad, ExpandDims, Softmax, Dropout, \
+    ReduceSum, ReLU, repeat_elements, LogSoftmax, ReduceMean, Equal, ReduceAny
+
+from mindspore.ops import operations as P
+import mindspore.ops as ops
+from mindspore.ops import functional as F
 
 EncoderOut = NamedTuple(
     "EncoderOut",
@@ -40,7 +44,44 @@ EncoderOut = NamedTuple(
     ],
 )
 
+
 logger = logging.getLogger(__name__)
+
+ops_matmul = MatMul()  # 矩阵乘法居然俩矩阵dim要一致？？？？MatMul需要matmul算子不需要
+ops_BatchMatMul = ops.BatchMatMul()
+
+# matmul = P.MatMul() 
+ops_transpose = ops.Transpose()
+
+def matmul(x1, x2):
+    assert x1.shape[-1] == x2.shape[-2]
+    ndim1_orig, ndim2_orig = F.rank(x1), F.rank(x2)
+    shape1_orig, shape2_orig = F.shape(x1), F.shape(x2)
+    
+    shape_out = [s for s in x1.shape[:-1]]
+    shape_out.append(x2.shape[-1])
+    shape_out = tuple(shape_out)
+    
+    if F.rank(x2) == 2:
+        if F.rank(x1) > 2:
+            x1 = F.reshape(x1, (-1, shape1_orig[-1]))
+        res = ops_matmul(x1, x2)
+        return F.reshape(res, shape_out)
+    else:
+        assert x1.dim()==x2.dim()
+        res = ops_BatchMatMul(x1, x2)
+        return res
+    
+    
+
+
+def Tensor_T(tensor):
+    if tensor.dim() == 2:
+        return ops_transpose(tensor, (1, 0))
+    elif tensor.dim() == 3:
+        return ops_transpose(tensor, (2, 1, 0))
+    else:
+        raise ImportError
 
 def get_available_activation_fns() -> List:
     return [
@@ -146,11 +187,12 @@ def mindspore_linear(input, weight, bias=None):
     tens_ops = (input, weight)
     if input.dim() == 2 and bias is not None:
         # fused op is marginally faster
-        tmp = matmul(input, weight.T)
+        tmp = matmul(input, Tensor_T(weight)) #,weight.T)
         ret = bias + tmp
         # ret = torch.addmm(bias, input, weight.T)
     else:
-        output = matmul(input, weight.T)
+        # print(input.shape, weight.shape)
+        output = matmul(input, Tensor_T(weight))
         if bias is not None:
             output += bias
         ret = output
@@ -184,10 +226,23 @@ def make_positions(tensor, padding_idx: int, onnx_trace: bool = False):
     # how to handle the dtype kwarg in cumsum.
 
     cumsum = CumSum()
-    mask = (tensor == padding_idx)
-    mask.set_dtype(mstype.int32)
-    mask = 1 - mask
+    
+    ops_ne = ops.NotEqual()
+    ops_cast = P.Cast()
+    mask = ops_ne(tensor, padding_idx)
+
+#     mask = (tensor == padding_idx)
+#     mask = mask * 1
+#     mask = 1 - mask
+    
+    mask = ops_cast(mask, mstype.int32)
+    # mask.set_dtype(mstype.int32)
+    
+    # print(mask, mask.dtype)
+    
     # tmp = CumSum(mask, axis=1).type_as(mask) * mask
+    # tmp = mask.cumsum(axis=1) * mask + padding_idx  # not exist Tensor.cumsum()
+    
     tmp = cumsum(mask, 1) * mask + padding_idx
     return tmp
 
@@ -578,11 +633,12 @@ class MultiheadAttention(nn.Cell):
                 assert self.bias_k is None
                 assert self.bias_v is None
 
-            q = q.view(tgt_len, bsz * self.num_heads, self.head_dim).transpose(1, 0, 2)
+            # q = q.view(tgt_len, bsz * self.num_heads, self.head_dim).transpose(1, 0, 2) # r1.2
+            q = ops_transpose(q.view(tgt_len, bsz * self.num_heads, self.head_dim), (1, 0, 2))
             if k is not None:
-                k = k.view(-1, bsz * self.num_heads, self.head_dim).transpose(1, 0, 2)
+                k = ops_transpose(k.view(-1, bsz * self.num_heads, self.head_dim), (1, 0, 2))
             if v is not None:
-                v = v.view(-1, bsz * self.num_heads, self.head_dim).transpose(1, 0, 2)
+                v = ops_transpose(v.view(-1, bsz * self.num_heads, self.head_dim), (1, 0, 2))
 
             src_len = k.shape[1]
             if key_padding_mask is not None:
@@ -594,7 +650,7 @@ class MultiheadAttention(nn.Cell):
                 # src_len += 1
                 # k = op_concat_axis1()
 
-            attn_output_weights = matmul(q, k.transpose(0, 2, 1))
+            attn_output_weights = matmul(q, ops_transpose(k, (0, 2, 1)))
             assert list(attn_output_weights.shape) == [bsz * self.num_heads, tgt_len, src_len]
 
             if attn_mask is not None:
@@ -653,7 +709,7 @@ class MultiheadAttention(nn.Cell):
 
             attn_output = matmul(attn_output_weights, v)
             assert list(attn_output.shape) == [bsz * self.num_heads, tgt_len, self.head_dim]
-            attn_output = attn_output.transpose(1, 0, 2).view(tgt_len, bsz, embed_dim)
+            attn_output = ops_transpose(attn_output, (1, 0, 2)).view(tgt_len, bsz, embed_dim)
             attn_output = mindspore_linear(attn_output, self.out_proj.weight, self.out_proj.bias)
 
             if need_weights:
@@ -689,11 +745,11 @@ class MultiheadAttention(nn.Cell):
             q *= self.scaling
             # print(self.bias_k)  None
 
-            q = q.view(tgt_len, bsz * self.num_heads, self.head_dim).transpose(1, 0, 2)
+            q = ops_transpose(q.view(tgt_len, bsz * self.num_heads, self.head_dim), (1, 0, 2))
             if k is not None:
-                k = k.view(-1, bsz * self.num_heads, self.head_dim).transpose(1, 0, 2)
+                k = ops_transpose(k.view(-1, bsz * self.num_heads, self.head_dim), (1, 0, 2))
             if v is not None:
-                v = v.view(-1, bsz * self.num_heads, self.head_dim).transpose(1, 0, 2)
+                v = ops_transpose(v.view(-1, bsz * self.num_heads, self.head_dim), (1, 0, 2))
 
             assert k is not None
             src_len = k.shape[1]
@@ -709,7 +765,7 @@ class MultiheadAttention(nn.Cell):
 
             # print(self.add_zero_attn) # False
 
-            attn_weights = matmul(q, k.transpose(0, 2, 1))
+            attn_weights = matmul(q, ops_transpose(k, (0, 2, 1)))
             attn_weights = self.apply_sparse_mask(attn_weights, tgt_len, src_len, bsz)
 
             assert list(attn_weights.shape) == [bsz * self.num_heads, tgt_len, src_len]
@@ -730,9 +786,9 @@ class MultiheadAttention(nn.Cell):
                         unsqueeze_ops
                     )
                 else:
-                    attn_weights = attn_weights.transpose(0, 2)
+                    attn_weights = ops_transpose(attn_weights, (0, 2))
                     attn_weights = attn_weights.masked_fill(key_padding_mask, float("-inf"))
-                    attn_weights = attn_weights.transpose(0, 2)
+                    attn_weights = ops_transpose(attn_weights, (0, 2))
                 attn_weights = attn_weights.view(bsz * self.num_heads, tgt_len, src_len)
 
             if before_softmax:
@@ -755,15 +811,15 @@ class MultiheadAttention(nn.Cell):
                 # the transpose is a no-op copy before view, thus unnecessary
                 attn = attn.view(tgt_len, bsz, embed_dim)
             else:
-                attn = attn.transpose(1, 0, 2).view(tgt_len, bsz, embed_dim)
+                attn = ops_transpose(attn, (1, 0, 2)).view(tgt_len, bsz, embed_dim)
 
             attn = self.out_proj(attn)
             attn_weights: Optional[Tensor] = None
             # print(need_weights, attn_weights)
             if need_weights:
-                attn_weights = attn_weights_float.view(
+                attn_weights = ops_transpose(attn_weights_float.view(
                     bsz, self.num_heads, tgt_len, src_len
-                ).transpose(1, 0, 2, 3)
+                ), (1, 0, 2, 3))
                 if not need_head_weights:
                     ops_mean = ReduceMean(keep_dims=False)
                     # average attention weights over heads
@@ -780,7 +836,7 @@ def get_args():
                      batch_size=None, batch_size_valid=None, best_checkpoint_metric='loss', bf16=False, bpe=None,
                      broadcast_buffers=False, bucket_cap_mb=25, checkpoint_shard_count=1, checkpoint_suffix='',
                      clip_norm=0.0, cpu=False, criterion='label_smoothed_cross_entropy', cross_self_attention=False,
-                     curriculum=0, data='./pre-train', data_buffer_size=10,
+                     curriculum=0, data='../pre-train', data_buffer_size=10,
                      dataset_impl=None, ddp_backend='no_c10d', decoder_attention_heads=16, decoder_embed_dim=1024,
                      decoder_embed_path=None, decoder_ffn_embed_dim=4096, decoder_input_dim=1024, decoder_layerdrop=0,
                      decoder_layers=6, decoder_layers_to_keep=None, decoder_learned_pos=True,
@@ -909,7 +965,7 @@ if __name__ == '__main__':
     # after Transformer.forward_embedding(src_tokensforward_embedding, token_embeddings), return x,
     # encoder_embedding
     x = Tensor(np.random.randn(24, 61, 1024), mstype.float32)
-    x = x.transpose(1, 0, 2)
+    x = ops_transpose(x, (1, 0, 2))
     encoder_padding_mask = (src_tokens == 1)  # [24, 61]
     attn_mask = None
 
